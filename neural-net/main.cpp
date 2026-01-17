@@ -9,7 +9,7 @@
 #include <SDL2/SDL.h>
 #include "mnist-reader.h"
 
-const int W = 1024,H = 1024;
+const int W = 840,H = 840;
 
 using namespace std;
 
@@ -285,19 +285,80 @@ int main() {
 
 
 	srand(time(0));
-	Net rete({784,32,16,10},{relu,relu,linear},{d_relu,d_relu,d_linear});
+	Net rete({784,16,16,10},{relu,relu,linear},{d_relu,d_relu,d_linear});
 
 	vector<vector<double>> X,Y;
 	vector<uint8_t> Y_labels;
-
+	
 	read_dataset(X);
 	read_dataset_labels(Y,Y_labels);
 
-	int epochs = 30;
+	int epochs = 8;
 	for(int epoch = 0;epoch<epochs;epoch++) {
 		printf("Epoch: %d, accuracy: %f\n",epoch,rete.accuracy(X,Y_labels,6000));
-		rete.layers[0].neurons[0].draw_weight(ren);
+		//rete.layers[1].neurons[0].draw_weight(ren);
 		rete.back_prop(X,Y,100,0.1);
+		
+	}
+
+
+	vector<double> buffer;
+
+	buffer.resize(28 * 28);
+
+	for(double& v : buffer) {
+		v = 0;
+	}
+
+	int quad_x = W / 28;
+	int quad_y = H / 28;
+
+	SDL_Event e;
+	int mouse_x,mouse_y;
+
+	while(1) {
+		SDL_GetMouseState(&mouse_x,&mouse_y);
+
+		mouse_x = SDL_clamp(mouse_x,10,W - 10),mouse_y=SDL_clamp(mouse_y,10,H-10);
+		
+		while(SDL_PollEvent(&e)) {
+
+			double& c = buffer[(mouse_x / quad_x) + (mouse_y / quad_y) * 28],new_c;
+			if(e.button.button == 1) {
+				c = min(c + 0.01,1.0);
+			}
+			else if(e.button.button == 4) {
+				c = max(c - 0.01,0.0);
+			}
+
+			
+
+			if(e.type == SDL_KEYDOWN) {
+				if(e.key.keysym.scancode == SDL_SCANCODE_C) {
+					for(double& v : buffer) {
+						v = 0;
+					}
+				}
+			}
+		}
+
+		for(int i = 0; i < W; i+=quad_x) {
+			for(int j = 0; j < H; j+=quad_y) {
+				SDL_Rect r = {i,j,quad_x,quad_y};
+
+				uint8_t col = buffer[i/quad_x + (j/quad_y) * 28] * 255;
+				SDL_SetRenderDrawColor(ren,col,col,col,255);
+
+				SDL_RenderFillRect(ren,&r);
+			}
+		}
+		vector<double>result = buffer;
+		rete.feed_forward(result);
+		int result_n = distance(result.begin(),max_element(result.begin(),result.end()));
+
+		cout << "Network output: " << result_n << endl;
+
+		SDL_RenderPresent(ren);
 	}
 
 
