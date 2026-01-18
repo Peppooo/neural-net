@@ -18,8 +18,8 @@ uint32_t readBigEndian(ifstream& file) {
     return swap32(result);
 }
 
-void read_dataset(vector<vector<double>>& Y) {
-    ifstream file("..\\train-images.idx3-ubyte",ios::binary);
+void read_images(const char* filename,vector<vector<double>>& Y) {
+    ifstream file(filename,ios::binary);
     if(!file) {
         cerr << "Cannot open image file\n";
     }
@@ -50,8 +50,8 @@ void read_dataset(vector<vector<double>>& Y) {
     }
 }
 
-void read_dataset_labels(vector<vector<double>>& X,vector<uint8_t>& labels) {
-    ifstream file("..\\train-labels.idx1-ubyte",ios::binary);
+void read_dataset_labels(const char* filename,vector<vector<double>>* X,vector<uint8_t>& labels) {
+    ifstream file(filename,ios::binary);
 
     uint32_t magic = readBigEndian(file);
     uint32_t numLabels = readBigEndian(file);
@@ -59,12 +59,12 @@ void read_dataset_labels(vector<vector<double>>& X,vector<uint8_t>& labels) {
     labels = vector<uint8_t>(numLabels);
     file.read(reinterpret_cast<char*>(labels.data()),labels.size());
 
-    X.resize(numLabels);
+    if(X) (*X).resize(numLabels);
 
     for(int i = 0; i < numLabels; i++) {
         uint8_t label = labels[i];
         for(int j = 0; j < 10; j++) {
-            X[i].push_back(j == label);
+            if(X) (*X)[i].push_back(j == label);
         }
     }
 }

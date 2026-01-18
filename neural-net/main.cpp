@@ -25,6 +25,14 @@ double d_relu(double x) {
 	return x > 0 ? 1 : 0;
 }
 
+double lrelu(double x) {
+	return max(x,0.1*x);
+}
+
+double d_lrelu(double x) {
+	return x > 0 ? 1 : 0.1;
+}
+
 double linear(double x) {
 	return x;
 }
@@ -116,7 +124,7 @@ public:
 		for(int i = 0; i < W; i+=quad_x) {
 			for(int j = 0; j < H; j += quad_y) {
 				SDL_SetRenderDrawColor(renderer,0,0,0,255);
-				SDL_Rect r{i,j,quad_x,quad_y};
+				SDL_Rect r{j,i,quad_y,quad_x};
 
 				double w = weights[w_idx];
 
@@ -285,19 +293,24 @@ int main() {
 
 
 	srand(time(0));
-	Net rete({784,16,16,10},{relu,relu,linear},{d_relu,d_relu,d_linear});
+	Net rete({784,10},{lrelu},{d_lrelu});
 
-	vector<vector<double>> X,Y;
-	vector<uint8_t> Y_labels;
+	vector<vector<double>> X,X_test,Y;
+	vector<uint8_t> Y_labels,Y_labels_test;
 	
-	read_dataset(X);
-	read_dataset_labels(Y,Y_labels);
+	read_images("..\\train-images.idx3-ubyte",X);
+	read_dataset_labels("..\\train-labels.idx1-ubyte",&Y,Y_labels);
 
-	int epochs = 8;
+	// read test
+
+	read_images("..\\test-images.idx3-ubyte",X_test);
+	read_dataset_labels("..\\test-labels.idx1-ubyte",nullptr,Y_labels_test);
+
+	int epochs = 1000;
 	for(int epoch = 0;epoch<epochs;epoch++) {
-		printf("Epoch: %d, accuracy: %f\n",epoch,rete.accuracy(X,Y_labels,6000));
-		//rete.layers[1].neurons[0].draw_weight(ren);
-		rete.back_prop(X,Y,100,0.1);
+		printf("Epoch: %d, accuracy: %f\n",epoch,rete.accuracy(X_test,Y_labels_test,10000));
+		rete.layers[0].neurons[3].draw_weight(ren);
+		rete.back_prop(X,Y,32,0.003);
 		
 	}
 
@@ -323,7 +336,7 @@ int main() {
 		
 		while(SDL_PollEvent(&e)) {
 
-			double& c = buffer[(mouse_x / quad_x) + (mouse_y / quad_y) * 28],new_c;
+			double& c = buffer[(mouse_x / quad_x) + (mouse_y / quad_y) * 28];
 			if(e.button.button == 1) {
 				c = min(c + 0.01,1.0);
 			}
