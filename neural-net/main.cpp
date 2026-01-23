@@ -26,11 +26,11 @@ double d_relu(double x) {
 }
 
 double lrelu(double x) {
-	return max(x,0.1*x);
+	return max(x,0.01*x);
 }
 
 double d_lrelu(double x) {
-	return x > 0 ? 1 : 0.1;
+	return x > 0 ? 1 : 0.01;
 }
 
 double linear(double x) {
@@ -87,7 +87,8 @@ public:
 		normal_distribution<double> distribution(0.0, stddev);
 
 		for(size_t i = 0; i < previous_layer_size; i++) {
-			weights[i] = distribution(global_rng);
+			//weights[i] = distribution(global_rng);
+			weights[i] = 0.01;
 		}
 		bias = 0;
 	}
@@ -214,10 +215,7 @@ public:
 
 		iota(shuffled_indecies.begin(),shuffled_indecies.end(),0);
 
-		random_device rd; // random generator for shuffling the indecies
-		mt19937 gen(rd());
-
-		shuffle(shuffled_indecies.begin(),shuffled_indecies.end(),gen);
+		shuffle(shuffled_indecies.begin(),shuffled_indecies.end(),global_rng);
 
 
 		for(int b = 0; b < X.size(); b+=batch_size) { // look each batch
@@ -256,7 +254,7 @@ public:
 							neuron.dev_cost_act = 0;
 							for(int next_ne = 0; next_ne < layers[l + 1].neurons.size();next_ne++) {
 								// the derivative of the cost based on the activation is calculated by making the sum of the chain rule for each neuron in the layer 
-								neuron.dev_cost_act += layers[l+1].neurons[next_ne].dev_cost_act *
+								neuron.dev_cost_act += layers[l+1].neurons[next_ne].dev_cost_act * // cost/act * act/linear * linear/prev_act
 									layers[l + 1].d_activation(layers[l+1].linear[next_ne]) *
 									layers[l + 1].neurons[next_ne].weights[ne]; // weight that multiplied the current iterating neuron (ne)
 							}
@@ -284,7 +282,85 @@ public:
 		} 
 
 	}
+	vector<double> find_activation(const vector<double>& Y,int epochs,double lr) {
+		//if(layer_index >= layers.size()) throw "layer index out of range";
+		if(Y.size() != output_size()) throw "Y size isnt correct";
+
+		uniform_real_distribution<double> distribution(0,1);
+
+		vector<double> feed;
+		feed.resize(input_size);
+		for(double& v : feed) {
+			v = distribution(global_rng);
+		}
+
+
+		for(int epoch = 0; epoch < epochs; epoch++) {
+
+			vector<double> net_output = feed;
+			feed_forward(net_output); // update network values according to current training sample
+
+			for(int _l = 0; _l < layers.size(); _l++) { // loop each layer
+				int l = layers.size() - _l - 1;
+				Layer& layer = layers[l];
+
+				vector<double> previous_layer = l > 0 ? layers[l - 1].activations : feed;
+
+				for(int ne = 0; ne < layer.neurons.size(); ne++) { // loop each neuron
+
+					Neuron& neuron = layer.neurons[ne];
+
+					if(_l == 0) { // calculate correctly the derivative of the cost over the neuron activation value
+						neuron.dev_cost_act = (net_output[ne] - Y[ne]);
+					}
+					else {
+						neuron.dev_cost_act = 0;
+						for(int next_ne = 0; next_ne < layers[l + 1].neurons.size(); next_ne++) {
+							// the derivative of the cost based on the activation is calculated by making the sum of the chain rule for each neuron in the layer 
+							neuron.dev_cost_act += layers[l + 1].neurons[next_ne].dev_cost_act * // cost/act * act/linear * linear/prev_act
+								layers[l + 1].d_activation(layers[l + 1].linear[next_ne]) *
+								layers[l + 1].neurons[next_ne].weights[ne]; // weight that multiplied the current iterating neuron (ne)
+						}
+					}
+
+				}
+
+			}
+
+			vector<double> gradient(input_size,0.0);
+
+			for(int I = 0; I < gradient.size(); I++) {
+				gradient[I] = 0;
+				for(int j = 0; j < layers[0].neurons.size(); j++) {
+					gradient[I] += layers[0].neurons[j].dev_cost_act * // cost/act * act/linear * linear/prev_act
+						layers[0].neurons[j].weights[I]; // weight that multiplied the current iterating neuron (ne)
+				}
+			} // computes first layer cost / activation derivative
+
+			for(int i = 0; i < input_size;i++) {
+				feed[i] -= lr*gradient[i];
+				feed[i] = (feed[i] < 0 ? 0 : (feed[i] > 1 ? 1 : feed[i])); // assures 0<=x<=
+			}
+			double sum = 0;
+			for(int i = 0; i < net_output.size(); i++) {
+				sum+= pow(net_output[i] - Y[i],2);
+			}
+
+			if(epoch % 1000 == 0) {
+				cout << "Epoch: " << epoch << " , avg error: " << sum/net_output.size() << endl;
+			}
+		}
+
+
+		return feed;
+
+	}
 };
+
+int batch_size = 32;double learning_rate = 0.03;
+
+
+int epoch = 0;
 
 int main() {
 	SDL_Init(SDL_INIT_VIDEO);
@@ -293,26 +369,24 @@ int main() {
 
 
 	srand(time(0));
-	Net rete({784,10},{lrelu},{d_lrelu});
+	Net rete({784,10},{relu},{d_relu});
 
 	vector<vector<double>> X,X_test,Y;
 	vector<uint8_t> Y_labels,Y_labels_test;
 	
-	read_images("..\\train-images.idx3-ubyte",X);
-	read_dataset_labels("..\\train-labels.idx1-ubyte",&Y,Y_labels);
+	read_images("..\\training\\digits\\train-images.idx3-ubyte",X);
+	read_dataset_labels("..\\training\\digits\\train-labels.idx1-ubyte",&Y,Y_labels);
 
 	// read test
 
-	read_images("..\\test-images.idx3-ubyte",X_test);
-	read_dataset_labels("..\\test-labels.idx1-ubyte",nullptr,Y_labels_test);
+	read_images("..\\training\\digits\\test-images.idx3-ubyte",X_test);
+	read_dataset_labels("..\\training\\digits\\test-labels.idx1-ubyte",nullptr,Y_labels_test);
 
-	int epochs = 1000;
-	for(int epoch = 0;epoch<epochs;epoch++) {
-		printf("Epoch: %d, accuracy: %f\n",epoch,rete.accuracy(X_test,Y_labels_test,10000));
-		rete.layers[0].neurons[3].draw_weight(ren);
-		rete.back_prop(X,Y,32,0.003);
-		
-	}
+	int neuron_num = 0,result_n1 = 0,result_n2 = 0;
+	bool neuron_mode = true;
+
+	SDL_Event e;
+
 
 
 	vector<double> buffer;
@@ -326,50 +400,103 @@ int main() {
 	int quad_x = W / 28;
 	int quad_y = H / 28;
 
-	SDL_Event e;
 	int mouse_x,mouse_y;
 
 	while(1) {
 		SDL_GetMouseState(&mouse_x,&mouse_y);
 
-		mouse_x = SDL_clamp(mouse_x,10,W - 10),mouse_y=SDL_clamp(mouse_y,10,H-10);
-		
+		mouse_x = SDL_clamp(mouse_x,10,W - 10),mouse_y = SDL_clamp(mouse_y,10,H - 10);
+
+
 		while(SDL_PollEvent(&e)) {
 
-			double& c = buffer[(mouse_x / quad_x) + (mouse_y / quad_y) * 28];
-			if(e.button.button == 1) {
-				c = min(c + 0.01,1.0);
-			}
-			else if(e.button.button == 4) {
-				c = max(c - 0.01,0.0);
-			}
+			if(e.type == SDL_QUIT) return 0;
 
-			
+			if(!neuron_mode) {
+				double& c = buffer[(mouse_x / quad_x) + (mouse_y / quad_y) * 28];
+				if(e.button.button == 1) {
+					c = min(c + 0.05,1.0);
+				}
+				else if(e.button.button == 4) {
+					c = max(c - 0.05,0.0);
+				}
+			}	
+
 
 			if(e.type == SDL_KEYDOWN) {
-				if(e.key.keysym.scancode == SDL_SCANCODE_C) {
+				// GENERAL
+				if(e.key.keysym.scancode == SDL_SCANCODE_N) {
+					neuron_mode = !neuron_mode;
+				}
+
+				// PREDICTION MODE
+				if(e.key.keysym.scancode == SDL_SCANCODE_C && !neuron_mode) {
 					for(double& v : buffer) {
 						v = 0;
+					}
+				}
+
+				// NEURON MODE
+				if(neuron_mode) {
+					if(e.key.keysym.scancode == SDL_SCANCODE_S) {
+						neuron_num--;
+						if(neuron_num < 0) neuron_num = (rete.layers.back().neurons.size()-1);
+					}
+					if(e.key.keysym.scancode == SDL_SCANCODE_W) {
+						neuron_num++;
+						if(neuron_num >= rete.layers.back().neurons.size()) neuron_num = 0;
 					}
 				}
 			}
 		}
 
-		for(int i = 0; i < W; i+=quad_x) {
-			for(int j = 0; j < H; j+=quad_y) {
-				SDL_Rect r = {i,j,quad_x,quad_y};
+		if(!neuron_mode) {
+			vector<double> input(rete.output_size(),0); input[neuron_num] = 1;
+			buffer = rete.find_activation(input,100000,0.03);
 
-				uint8_t col = buffer[i/quad_x + (j/quad_y) * 28] * 255;
-				SDL_SetRenderDrawColor(ren,col,col,col,255);
+			for(int i = 0; i < W; i += quad_x) {
+				for(int j = 0; j < H; j += quad_y) {
+					SDL_Rect r = {i,j,quad_x,quad_y};
 
-				SDL_RenderFillRect(ren,&r);
+					uint8_t col = buffer[i / quad_x + (j / quad_y) * 28] * 255;
+					SDL_SetRenderDrawColor(ren,col,col,col,255);
+
+					SDL_RenderFillRect(ren,&r);
+				}
 			}
 		}
-		vector<double>result = buffer;
-		rete.feed_forward(result);
-		int result_n = distance(result.begin(),max_element(result.begin(),result.end()));
+		if(neuron_mode) {
+			epoch++;
+			printf("Epoch: %d, accuracy: %f\n",epoch,rete.accuracy(X_test,Y_labels_test,10000));
+			if(epoch<10) rete.back_prop(X,Y,batch_size,learning_rate);
+			rete.layers.back().neurons[neuron_num].draw_weight(ren);
+		}
 
-		cout << "Network output: " << result_n << endl;
+
+		vector<double> result = buffer;
+
+
+		rete.feed_forward(result);
+		result_n1 = distance(result.begin(),max_element(result.begin(),result.end()));
+		double prob1 = *max_element(result.begin(),result.end());
+
+		result.erase(max_element(result.begin(),result.end()));
+
+		int result_n2 = distance(result.begin(),max_element(result.begin(),result.end()));
+		double prob2 = *max_element(result.begin(),result.end());
+		
+
+		if(!neuron_mode) {
+
+			char title[64];
+			snprintf(title,sizeof(title),"Network prediction: %d %f%% , %d %f%%",result_n1,prob1,result_n2,prob2);
+			SDL_SetWindowTitle(win,title);
+		}
+		if(neuron_mode) {
+			char title[64];
+			snprintf(title,sizeof(title),"Current neuron: %d",neuron_num);
+			SDL_SetWindowTitle(win,title);
+		}
 
 		SDL_RenderPresent(ren);
 	}
